@@ -6,7 +6,8 @@ a freelance translator (English / Japanese → German, MTPE, German proofreading
 The site used to run on WordPress on a Sakura Internet server. Because of the
 ongoing stream of PHP/WordPress vulnerabilities, the WordPress install has been
 shut down. This repository rebuilds the same content as plain static HTML and
-hosts it on Cloudflare Pages.
+hosts it on GitHub Pages, with the DNS zone (and the Zoho mail records in it)
+left untouched at Sakura.
 
 Status (2026-10-22): the old server no longer responds. The three captured
 WordPress pages in [`reference/`](reference/) are the only copy of the content
@@ -72,8 +73,8 @@ page navigation, no JavaScript involved.
 ## New stack (decided)
 
 - Hand-written HTML + one CSS file, no framework, no build step, no JavaScript.
-- Hosted on **Cloudflare Pages**, deployed automatically from the `main` branch.
-- DNS moves from Sakura to Cloudflare (free plan); the Zoho MX records are carried over.
+- Hosted on **GitHub Pages**, published by a GitHub Actions workflow on every push to `main`.
+- DNS stays at Sakura. Only the `A` record (→ GitHub Pages IPs) and a new `www` CNAME change; the Zoho MX records are not touched.
 - Self-hosted fonts, no third-party requests, no cookies, no analytics.
 
 See the design doc for why.

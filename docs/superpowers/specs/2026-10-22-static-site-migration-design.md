@@ -1,7 +1,7 @@
 # Design: migrate tokyotranslator.com from WordPress to a static site
 
 Date: 2026-10-22
-Status: draft, awaiting owner approval (builder check done 2026-10-22)
+Status: draft, awaiting owner approval (builder check done 2026-10-22; hosting re-decided the same day after the owner ruled out touching the mail DNS)
 
 ## 1. Intent
 
@@ -22,7 +22,10 @@ Goals
 - Same content and the same three languages as before: German, English, Japanese.
 - German at `/`, English at `/en/`, Japanese at `/ja/`. Old links keep working.
 - No server-side code anywhere. Nothing to patch.
-- HTTPS on the apex domain, with the Zoho mailboxes on the domain unaffected.
+- HTTPS on the apex domain.
+- **The DNS zone stays at Sakura and the Zoho mail records (MX) are not
+  touched at all.** The owner's words: mail works, don't risk it. Only the
+  web records (`A @`, `CNAME www`) change.
 - Deploy by pushing to `main`.
 
 Non-goals
@@ -40,7 +43,8 @@ Anti-goals (this would be a failure even if it "works")
 - Any third-party JavaScript or third-party font loading. The audience is
   German-speaking; loading Google Fonts from Google's servers has drawn
   cease-and-desist letters in Germany since the 2022 Munich ruling.
-- Breaking email delivery for `quade@tokyotranslator.com` during the DNS move.
+- Any change to the MX records or a nameserver move. Both would mean
+  re-creating the mail records, which the owner has ruled out.
 - Introducing a build toolchain (Node, Ruby, Hugo) that will itself need
   updating in two years for a four-file site.
 
@@ -56,14 +60,14 @@ Anti-goals (this would be a failure even if it "works")
 - DNS is hosted at Sakura Internet (`ns1.dns.ne.jp`, `ns2.dns.ne.jp`). Mail is
   on Zoho (`mx.zohomail.com`, `mx2.zohomail.com`). There is no `www` record
   and no SPF/DKIM/DMARC today. Record TTLs are 3600 s. The public zone may
-  not be the whole zone (Zoho verification TXTs, subdomains); the Sakura
-  panel is the source of truth and is exported before anything moves.
+  not be the whole zone (Zoho verification TXTs, subdomains); since the
+  zone is not moving, those records simply stay where they are.
 - The domain is registered through Sakura's domain service (registrar of
   record: JPRS). **It expires on 2026-11-30.** The Sakura *domain* contract
   stays and must be renewed; only the Sakura *server* contract goes away.
-- Credentials needed for the cutover (Cloudflare account, GitHub → Pages
-  authorisation, Sakura control panel, Zoho admin) are the owner's. The
-  builder does not hold them.
+- Credentials needed for the cutover (GitHub repo settings, Sakura control
+  panel) are the owner's. The builder does not hold them. Zoho is not
+  touched.
 - German law (§ 5 DDG, formerly TMG) requires an Impressum on a commercial
   site aimed at Germany. The Impressum section stays.
 
@@ -71,44 +75,55 @@ Anti-goals (this would be a failure even if it "works")
 
 Each decision below is the author's call unless marked "owner".
 
-### 4.1 Hosting: Cloudflare Pages
+### 4.1 Hosting: GitHub Pages
 
-Chosen over AWS S3 + CloudFront.
+Constraint first: the nameservers stay at Sakura. Sakura DNS supports plain
+A, AAAA, CNAME, MX, TXT records, no ALIAS/ANAME and no CNAME at the apex. So
+the host must accept the bare domain via fixed A records. That rules out:
 
-| | Cloudflare Pages | S3 + CloudFront |
+| Option | Why not |
+|---|---|
+| Cloudflare Pages | an apex custom domain requires the zone to be on Cloudflare DNS (their docs: "you will need to add your site as a Cloudflare zone"); only subdomains work on external DNS |
+| S3 + CloudFront | CloudFront has no fixed IPs; an apex needs a Route 53 alias, i.e. a nameserver move |
+
+Remaining candidates, both with fixed apex IPs, automatic HTTPS and deploy-on-push:
+
+| | GitHub Pages | Netlify |
 |---|---|---|
-| HTTPS on apex | automatic | needs ACM certificate + CloudFront distribution |
-| Deploy | connect GitHub repo, push to `main` | CI job or manual `aws s3 sync` + cache invalidation |
-| Cost | free | cents per month, but a bill and an AWS account to keep secure |
-| Config surface | one dashboard page | bucket policy, OAC, distribution, cert, Route 53 |
-| Custom 404, headers, redirects | `404.html`, `_headers`, `_redirects` files in the repo | CloudFront functions or response-header policies |
+| Apex on external DNS | 4 documented A records (`185.199.108–111.153`) | one A record `75.2.60.5` (documented fallback; Netlify prefers ALIAS) |
+| Account needed | none new, repo is already on GitHub | new Netlify account + GitHub OAuth |
+| Private repo | needs GitHub Pro; on a free plan the repo must be **public** | fine |
+| Custom response headers | no (CSP via `<meta>` instead) | yes (`_headers`) |
+| Server-side redirects | only `www`↔apex and trailing slash (automatic) | yes (`_redirects`) |
+| Cost | free | free tier |
 
-Pages is set to: no build command, output directory `site`, production branch
-`main`. Every push to `main` goes live; every other branch gets a preview URL.
+Decision: **GitHub Pages**, deployed by a GitHub Actions workflow that
+uploads `site/`. The repository becomes public (owner confirms; everything
+in it is already public content, the old HTML included). If the owner wants
+the repo to stay private, the fallback is Netlify with the same `site/`
+folder, and the only plan changes are the A record value, the `www` target,
+and moving the headers/redirects from `<meta>` back into `_headers` /
+`_redirects`.
 
-### 4.2 DNS: move the nameservers to Cloudflare
+### 4.2 DNS: stays at Sakura; two web records change
 
-Sakura's DNS cannot point the bare domain `tokyotranslator.com` at a hostname
-(no CNAME or ALIAS at the apex), and Cloudflare Pages requires the zone to be
-on Cloudflare DNS for an apex custom domain anyway. So the nameservers move
-to Cloudflare (free plan). The domain registration itself does not move.
+Nothing is moved. In the Sakura zone editor:
 
-The zone on Cloudflare must contain, before the nameserver switch:
-
-| Record | Value | Why |
+| Action | Record | Value |
 |---|---|---|
-| `MX @` | `mx.zohomail.com` prio 10, `mx2.zohomail.com` prio 20 | existing mail, copied verbatim |
-| `TXT @` | `v=spf1 include:zohomail.com ~all` | owner: confirm in the Zoho admin console; Zoho's current SPF include string must be copied from there |
-| `CNAME @` | `tokyotranslator.pages.dev` (added by Pages "custom domain") | the site |
-| `CNAME www` | `tokyotranslator.pages.dev` (added by Pages "custom domain") | so `www.` works, redirected to the apex |
-| DKIM / DMARC | owner: add from Zoho admin console if desired | not published today; optional but recommended |
+| change | `A @` | replace `153.126.130.234` with the four GitHub Pages IPs `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` |
+| add | `CNAME www` | `kei178.github.io` |
+| add (optional, recommended) | `TXT _github-pages-challenge-kei178` | the token GitHub shows under Settings → Pages → verified domains; stops anyone else from claiming the domain on Pages |
+| untouched | `MX @` ×2 | Zoho, as today |
+| not added | SPF / DKIM / DMARC | the owner does not want mail DNS touched; left out on purpose |
 
-The old `A 153.126.130.234` record is dropped.
+GitHub Pages issues a Let's Encrypt certificate once the A records resolve
+and "Enforce HTTPS" is ticked; `http://` and `www.` then redirect to
+`https://tokyotranslator.com/`.
 
-Rollout order: build and verify the site on `*.pages.dev` first, add the
-custom domains, copy the zone, switch nameservers, confirm mail still arrives,
-then cancel the Sakura server (keep the domain registration where it is).
-See 4.11 for who does which part and where the stop-and-confirm gates are.
+Rollout order: build and verify on the GitHub Pages preview first, set the
+custom domain, change the two Sakura records, wait for the certificate,
+enforce HTTPS, then cancel the Sakura server. See 4.11.
 
 ### 4.3 Site structure: three static HTML pages, no build step
 
@@ -117,9 +132,8 @@ site/
   index.html          German (default)
   en/index.html       English
   ja/index.html       Japanese
-  404.html
-  _headers            security headers (Cloudflare Pages)
-  _redirects          www → apex, old WordPress paths → /
+  404.html            GitHub Pages serves this for unknown paths
+  .nojekyll           tells GitHub Pages to serve files as-is
   assets/
     css/style.css     the one stylesheet
     img/              hero + profile images (jpg, resized, plus webp)
@@ -134,6 +148,10 @@ language, introduce Eleventy at that point.
 
 No JavaScript. The navigation is four anchor links that wrap on narrow
 screens; no hamburger menu.
+
+Deployment is one workflow, `.github/workflows/pages.yml`: on push to
+`main`, upload `site/` with `actions/upload-pages-artifact` and publish it
+with `actions/deploy-pages`. No build step inside the workflow either.
 
 ### 4.4 Language switching: separate pages, plain links
 
@@ -180,14 +198,18 @@ Japanese font stack for body text (the old theme did the same via `ja.css`).
 
 ### 4.8 Privacy and security
 
-- `_headers` sets `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; frame-ancestors 'none'`,
-  `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
-  `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
-- HSTS is enabled in the Cloudflare dashboard after the domain is confirmed working.
+- GitHub Pages cannot set custom response headers, so each page carries
+  `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; base-uri 'self'; form-action 'none'">`
+  and `<meta name="referrer" content="strict-origin-when-cross-origin">`.
+  `frame-ancestors`, `X-Content-Type-Options` and HSTS cannot be expressed
+  in a meta tag; accepted, since the site has no scripts, no forms and no
+  logged-in state. GitHub Pages sends HSTS itself on custom domains once
+  HTTPS is enforced.
 - No cookies, no analytics, no external requests of any kind.
 - A short Datenschutz / Privacy section is added under the Impressum stating
-  that the site sets no cookies, collects no data, and is served by Cloudflare
-  (naming Cloudflare as hosting provider and linking to its privacy policy).
+  that the site sets no cookies, collects no data, and is served by GitHub
+  Pages (naming GitHub, Inc. as hosting provider and linking to GitHub's
+  privacy statement, `https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement`).
   Owner: review the wording; this is a legal text.
 
 ### 4.9 Design
@@ -213,18 +235,19 @@ repository. Ends with the site verified locally and pushed to `main`. Needs
 no credentials beyond the GitHub repo.
 
 **Part B, the cutover** (Tasks 8–10): a runbook the owner executes in the
-Cloudflare, Sakura and Zoho dashboards, with the builder preparing commands
-and checking results. Gates, in order:
+GitHub repo settings and the Sakura zone editor, with the builder preparing
+commands and checking results. Gates, in order:
 
-1. The owner opens the `*.pages.dev` preview in all three languages and
+1. The owner opens the GitHub Pages preview in all three languages and
    signs off the content, in particular the Impressum address and the
    Datenschutz text (both legal texts). Nothing goes on the real domain
    before this. This is also where the §5 assumptions get confirmed or
    corrected; the site is down today, so a quick review beats a long one.
-2. The Sakura zone has been exported and every record is present on
-   Cloudflare before the nameserver switch.
-3. A test mail has arrived in Zoho after the switch, and the site has run
-   for a week, before the Sakura server contract is cancelled.
+2. In the Sakura zone editor only the `A @` record is changed and only
+   `CNAME www` (plus the optional verification TXT) is added. The MX rows
+   are not opened. `dig MX` before and after must match.
+3. The site has served over HTTPS for a week before the Sakura server
+   contract is cancelled.
 4. The Sakura domain contract is never cancelled; it is renewed before
    2026-11-30.
 
@@ -240,7 +263,7 @@ value until told otherwise.
 | 2 | Years of experience: DE/EN say 8, JA says 7. The pages date from 2017–2020, so both are probably stale. | "8" on all three pages until the owner gives a current number |
 | 3 | Hero taglines mention book translation (Literaturübersetzungen), but the Services list does not. Keep as is? | keep as is |
 | 4 | Privacy section wording (4.8). | draft text, owner reviews |
-| 5 | SPF / DKIM / DMARC values for Zoho (4.2). | SPF added from Zoho's documented include; DKIM/DMARC left for the owner |
+| 5 | SPF / DKIM / DMARC for Zoho are not published today. | Left alone on the owner's instruction; can be added any time later without touching the MX rows |
 | 6 | Copyright year: old footer says 2026 (WordPress auto-year). | current year, hand-written |
 
 ## 6. Left to the builder
@@ -257,7 +280,8 @@ value until told otherwise.
 - All three pages pass the W3C Nu HTML checker with no errors.
 - Each page loads with zero third-party requests (check the Network panel).
 - Lighthouse: Performance, Accessibility, Best Practices, SEO all ≥ 95 on mobile.
-- `curl -I https://tokyotranslator.com/`, `/en/`, `/ja/` return 200 with the
-  security headers; `https://www.tokyotranslator.com/` returns 301 to the apex.
-- After the nameserver switch: a test mail sent to `quade@tokyotranslator.com`
-  from an outside account arrives in Zoho.
+- `curl -I https://tokyotranslator.com/`, `/en/`, `/ja/` return 200;
+  `http://tokyotranslator.com/` and `https://www.tokyotranslator.com/`
+  redirect to the apex over HTTPS.
+- `dig +short MX tokyotranslator.com` returns the same two Zoho records
+  before and after the DNS edit.

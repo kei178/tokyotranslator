@@ -2,33 +2,34 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rebuild tokyotranslator.com as three static HTML pages (de/en/ja) and put it live on Cloudflare Pages under the existing domain without breaking the Zoho mailboxes.
+**Goal:** Rebuild tokyotranslator.com as three static HTML pages (de/en/ja) and put it live on GitHub Pages under the existing domain, with the DNS zone and the Zoho mail records left untouched at Sakura.
 
-**Architecture:** Hand-written HTML in `site/` with one shared stylesheet, self-hosted fonts and locally stored images; no build step, no JavaScript. Cloudflare Pages serves `site/` straight from the `main` branch; the DNS zone moves from Sakura to Cloudflare so the apex can point at Pages.
+**Architecture:** Hand-written HTML in `site/` with one shared stylesheet, self-hosted fonts and locally stored images; no build step, no JavaScript. A GitHub Actions workflow publishes `site/` to GitHub Pages on every push to `main`. At Sakura only the apex `A` record changes (to the GitHub Pages IPs) and a `www` CNAME is added.
 
-**Tech Stack:** HTML5, CSS3, Cloudflare Pages, Cloudflare DNS. Verification only (never a build dependency): `npx html-validate`, `npx lighthouse`, `curl`, `dig`, Python 3 for a check script and image resizing.
+**Tech Stack:** HTML5, CSS3, GitHub Pages, GitHub Actions (`actions/upload-pages-artifact`, `actions/deploy-pages`). Verification only (never a build dependency): `npx html-validate`, `npx lighthouse`, `curl`, `dig`, Python 3 for a check script and image resizing.
 
 **Spec:** `docs/superpowers/specs/2026-10-22-static-site-migration-design.md`
 
 ## Global Constraints
 
 - No JavaScript anywhere in `site/`. No `<script>` tags.
-- No request to any host other than the site itself. The only external URLs allowed in the HTML are the `hreflang` links to `https://tokyotranslator.com/...`, `mailto:quade@tokyotranslator.com`, and the Cloudflare privacy-policy link in the privacy section.
+- No request to any host other than the site itself. The only external URLs allowed in the HTML are the `hreflang`/canonical links to `https://tokyotranslator.com/...`, `mailto:quade@tokyotranslator.com`, and the GitHub privacy-statement link in the privacy section.
 - URLs: German at `/`, English at `/en/`, Japanese at `/ja/`. Nothing else.
-- No package.json, no lockfile, no `node_modules`, no build command on Pages. Tools run via `npx --yes` or `python3` one-offs.
+- No package.json, no lockfile, no `node_modules`, no build step in the workflow. Tools run via `npx --yes` or `python3` one-offs.
 - Fonts: Lora 400 / 400 italic / 700 and Montserrat 300 / 400, latin subset, woff2, from `site/assets/fonts/`.
 - Images: hero ≤ 250 KB, profile ≤ 60 KB.
-- Security headers exactly as in spec §4.8.
+- Every HTML page carries the two `<meta>` tags from spec §4.8 (CSP and referrer policy).
+- The MX records at Sakura are never edited, deleted or re-created. No SPF/DKIM/DMARC is added.
 - Content is copied from `reference/{de,en,ja}.html` with the spec §5 assumptions: Tokyo Ariake address with `〒135-0063` on all pages, "8 years" on all pages, current year in the footer, localized `<title>` and `<meta name="description">`.
 - Every commit message ends with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 
 ## Review Focus
 
 1. A visitor on a 360 px wide phone: nav links, the language switcher and the hero text must stay readable with no horizontal scroll. Pinned by the viewport check in Task 3.
-2. A visitor who types `www.tokyotranslator.com` or `http://` must land on `https://tokyotranslator.com/` with one redirect. Pinned in Task 9.
-3. Any old deep link (`/en`, `/ja` without slash, `/feed/`, `/wp-login.php`) must not 404 into a blank page: trailing-slash variants resolve, everything else gets the trilingual 404. Pinned in Task 6 and Task 9.
+2. A visitor who types `www.tokyotranslator.com` or `http://` must land on `https://tokyotranslator.com/`. Pinned in Task 9.
+3. Any old deep link (`/en`, `/ja` without slash, `/feed/`, `/wp-login.php`) must not show a blank page: GitHub Pages resolves `/en` → `/en/` itself; everything else gets the trilingual 404. Pinned in Task 6 and Task 9.
 4. A screen-reader user must hear the page in the right language: `lang` on `<html>`, and `lang` on the three language-switcher links that are not in the page language. Pinned in the check script (Task 3).
-5. Mail to `quade@tokyotranslator.com` must still arrive after the nameserver switch, and mail sent from Zoho must not be flagged for a missing SPF. Pinned in Task 9.
+5. Mail to `quade@tokyotranslator.com` must be unaffected: the MX answer from `dig` is byte-for-byte the same before and after the Sakura edit. Pinned in Task 9.
 
 ---
 
@@ -39,9 +40,9 @@
 | `site/index.html` | German page (default) |
 | `site/en/index.html` | English page |
 | `site/ja/index.html` | Japanese page |
-| `site/404.html` | trilingual not-found page |
-| `site/_headers` | Cloudflare Pages response headers |
-| `site/_redirects` | www → apex, old WordPress paths → `/` |
+| `site/404.html` | trilingual not-found page (GitHub Pages serves it for unknown paths) |
+| `site/.nojekyll` | empty; makes GitHub Pages serve files as-is |
+| `.github/workflows/pages.yml` | publishes `site/` to GitHub Pages on push to `main` |
 | `site/assets/css/style.css` | the one stylesheet, incl. `@font-face` |
 | `site/assets/fonts/*.woff2` | Lora and Montserrat subsets |
 | `site/assets/img/hero.jpg`, `hero.webp`, `profile.jpg`, `profile.webp` | images served |
@@ -159,7 +160,8 @@ git commit -m "feat: self-host Lora and Montserrat (latin subset, woff2)"
 `python3 -I scripts/check.py` walks `site/**/*.html` and fails (exit 1, one line per failure) if any page:
 
 - contains `<script`;
-- contains `http://` or `https://` outside of (a) `hreflang` `<link>` tags pointing at `https://tokyotranslator.com/`, (b) `href="https://www.cloudflare.com/privacypolicy/"`;
+- contains `http://` or `https://` outside of (a) `hreflang`/`canonical` `<link>` tags pointing at `https://tokyotranslator.com/`, (b) `href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement"`;
+- lacks the CSP `<meta http-equiv="Content-Security-Policy" ...>` tag or the `<meta name="referrer" ...>` tag with the exact values from spec §4.8;
 - lacks `<html lang="xx">` where `xx` is `de` for `site/index.html` and `site/404.html`, `en` for `site/en/index.html`, `ja` for `site/ja/index.html`;
 - (index pages only) lacks the four `hreflang` links (`de`, `en`, `ja`, `x-default`) with the exact URLs from spec §4.4;
 - (index pages only) lacks a `<title>` and a `<meta name="description">`;
@@ -167,7 +169,7 @@ git commit -m "feat: self-host Lora and Montserrat (latin subset, woff2)"
 - (index pages only) lacks a language-switcher `<a>` for each of the other two languages carrying a `lang` attribute (`lang="en"` and `lang="ja"` on the German page, etc.);
 - references a `src`/`href` under `/assets/` that does not exist on disk.
 
-It also fails if `site/index.html`, `site/en/index.html`, `site/ja/index.html`, `site/404.html`, `site/_headers`, `site/_redirects` are missing. (Tasks 4–6 create the rest; until then those failures are expected.)
+It also fails if `site/index.html`, `site/en/index.html`, `site/ja/index.html`, `site/404.html`, `site/.nojekyll`, `.github/workflows/pages.yml` are missing. (Tasks 4–6 create the rest; until then those failures are expected.)
 
 - [ ] **Step 2: Run it to see it fail**
 
@@ -196,7 +198,7 @@ Structure (same for all three pages; copy sentence by sentence from `reference/d
 
 ```
 <!doctype html><html lang="de">
-head: charset, viewport, title, description, canonical https://tokyotranslator.com/, 4 hreflang links, stylesheet /assets/css/style.css, preload of lora-400.woff2 (crossorigin)
+head: charset, viewport, CSP meta and referrer meta (spec §4.8), title, description, canonical https://tokyotranslator.com/, 4 hreflang links, stylesheet /assets/css/style.css, preload of lora-400.woff2 (crossorigin)
 body
   a.skip-link → #main ("Zum Inhalt springen")
   header.site-header
@@ -214,7 +216,7 @@ body
   footer.site-footer: "© 2026 Tokyo Translator"
 ```
 
-Privacy text (German): "Diese Website setzt keine Cookies, bindet keine Inhalte Dritter ein und erhebt keine personenbezogenen Daten. Sie wird von Cloudflare, Inc. ausgeliefert; Cloudflare verarbeitet dabei technisch notwendige Verbindungsdaten (z. B. IP-Adresse) nach seiner <a href="https://www.cloudflare.com/privacypolicy/">Datenschutzerklärung</a>. Wenn Sie mir eine E-Mail schreiben, verwende ich Ihre Angaben ausschließlich zur Bearbeitung Ihrer Anfrage."
+Privacy text (German): "Diese Website setzt keine Cookies, bindet keine Inhalte Dritter ein und erhebt keine personenbezogenen Daten. Sie wird über GitHub Pages (GitHub, Inc.) ausgeliefert; GitHub verarbeitet dabei technisch notwendige Verbindungsdaten (z. B. IP-Adresse) nach seiner <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">Datenschutzerklärung</a>. Wenn Sie mir eine E-Mail schreiben, verwende ich Ihre Angaben ausschließlich zur Bearbeitung Ihrer Anfrage."
 
 - [ ] **Step 5: Run the check script and the HTML validator**
 
@@ -223,7 +225,7 @@ python3 -I scripts/check.py
 npx --yes html-validate site/index.html
 ```
 
-Expected: `check.py` reports only the four not-yet-created files (`en/index.html`, `ja/index.html`, `404.html`, `_headers`, `_redirects`) and nothing about `index.html`; `html-validate` reports 0 errors.
+Expected: `check.py` reports only the not-yet-created files (`en/index.html`, `ja/index.html`, `404.html`, `.nojekyll`, `pages.yml`) and nothing about `index.html`; `html-validate` reports 0 errors.
 
 - [ ] **Step 6: Viewport check**
 
@@ -291,7 +293,7 @@ python3 -I scripts/check.py
 npx --yes html-validate site/ja/index.html
 ```
 
-Expected: `check.py` reports only `404.html`, `_headers`, `_redirects` missing; validator 0 errors. Open `http://localhost:8000/ja/` and confirm the body renders in a Japanese sans font (not Lora).
+Expected: `check.py` reports only `404.html`, `.nojekyll`, `pages.yml` missing; validator 0 errors. Open `http://localhost:8000/ja/` and confirm the body renders in a Japanese sans font (not Lora).
 
 - [ ] **Step 3: Commit**
 
@@ -302,51 +304,39 @@ git commit -m "feat: Japanese page"
 
 ---
 
-### Task 6: 404 page, headers, redirects
+### Task 6: 404 page, `.nojekyll`, deployment workflow
 
 **Files:**
-- Create: `site/404.html`, `site/_headers`, `site/_redirects`
+- Create: `site/404.html`, `site/.nojekyll`, `.github/workflows/pages.yml`
 
 **Interfaces:**
-- Produces: the Pages configuration files; Task 9 verifies them on the live domain.
+- Produces: the workflow that Task 8 enables; Task 9 verifies the live domain.
 
 - [ ] **Step 1: Write `site/404.html`**
 
-`lang="de"`, same header as the German page (no nav), one `main` with three short blocks: "Seite nicht gefunden" → link `/`; "Page not found" → `/en/`; "ページが見つかりません" → `/ja/`, each block with its own `lang` attribute. Uses the shared stylesheet.
+`lang="de"`, same `<head>` metas as the German page, same header (no nav), one `main` with three short blocks: "Seite nicht gefunden" → link `/`; "Page not found" → `/en/`; "ページが見つかりません" → `/ja/`, each block with its own `lang` attribute. Uses the shared stylesheet via absolute path `/assets/css/style.css`.
 
-- [ ] **Step 2: Write `site/_headers`**
+- [ ] **Step 2: Create the empty marker file**
 
-```
-/*
-  Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-```
+Run: `touch site/.nojekyll`
 
-- [ ] **Step 3: Write `site/_redirects`**
+- [ ] **Step 3: Write `.github/workflows/pages.yml`**
 
-```
-https://www.tokyotranslator.com/*  https://tokyotranslator.com/:splat  301
-/en      /en/   301
-/ja      /ja/   301
-/feed/*  /      301
-/wp-*    /      301
-/xmlrpc.php  /  301
-```
+Trigger `push` on `main` plus `workflow_dispatch`. Permissions `contents: read`, `pages: write`, `id-token: write`. One job `deploy` on `ubuntu-latest` with `environment: github-pages`, concurrency group `pages` (cancel-in-progress false), steps: `actions/checkout@v4`, `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3` with `path: site`, `actions/deploy-pages@v4` (id `deployment`). No build step.
 
 - [ ] **Step 4: Verify**
 
-Run: `python3 -I scripts/check.py && npx --yes html-validate site/404.html`
+```bash
+python3 -I scripts/check.py && npx --yes html-validate site/404.html
+```
+
 Expected: `check.py` exits 0 with no output; validator 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add site/404.html site/_headers site/_redirects
-git commit -m "feat: 404 page, security headers and redirects for Cloudflare Pages"
+git add site/404.html site/.nojekyll .github/workflows/pages.yml
+git commit -m "feat: 404 page and GitHub Pages deployment workflow"
 ```
 
 ---
@@ -381,101 +371,104 @@ git commit -m "docs: local verification notes"
 
 ## Part B: cutover runbook
 
-Tasks 8–10 need the owner's Cloudflare, Sakura and Zoho logins (spec §4.11). The builder prepares and verifies; the owner clicks. **Gate before Task 9:** the owner has reviewed all three pages on `*.pages.dev` and confirmed the Impressum address, the experience figure and the privacy text.
+Tasks 8–10 need the owner's GitHub repo settings and the Sakura control panel (spec §4.11). The builder prepares and verifies; the owner clicks. **Gate before Task 9:** the owner has reviewed all three pages on the GitHub Pages preview and confirmed the Impressum address, the experience figure and the privacy text. Zoho is never opened.
 
-### Task 8: Cloudflare Pages project (owner performs the dashboard steps)
+### Task 8: Enable GitHub Pages (owner performs the settings steps)
 
-**Files:** none; dashboard actions recorded in `README.md` under a new "Deployment" heading.
+**Files:** none; settings recorded in `README.md` under a new "Deployment" heading.
 
-- [ ] **Step 1: Push `main` to GitHub**
+- [ ] **Step 1: Make the repository public (spec §4.1)**
 
-Run: `git push origin main`
+Run: `gh repo edit kei178/tokyotranslator --visibility public --accept-visibility-change-consequences`
+Expected: `gh repo view --json visibility` prints `PUBLIC`. (Skip if the owner has GitHub Pro; Pages then works on the private repo.)
 
-- [ ] **Step 2: Create the Pages project**
-
-In the Cloudflare dashboard: Workers & Pages → Create → Pages → Connect to Git → this repository. Settings: production branch `main`, framework preset `None`, build command empty, build output directory `site`. Save and deploy.
-
-- [ ] **Step 3: Verify on the `*.pages.dev` URL**
+- [ ] **Step 2: Push `main` and set the Pages source to GitHub Actions**
 
 ```bash
-for p in / /en/ /ja/ /nope; do curl -sS -o /dev/null -w "$p %{http_code}\n" "https://<project>.pages.dev$p"; done
-curl -sSI "https://<project>.pages.dev/" | grep -iE "content-security-policy|x-content-type-options|referrer-policy|permissions-policy"
+git push origin main
+gh api -X POST repos/kei178/tokyotranslator/pages -f build_type=workflow
+gh workflow run pages.yml && gh run watch
 ```
 
-Expected: `200 200 200 404`; the four header lines present. Open each page in the browser once.
+Expected: the workflow run finishes green; `gh api repos/kei178/tokyotranslator/pages --jq .html_url` prints `https://kei178.github.io/tokyotranslator/`.
 
-- [ ] **Step 4: Record the project name and settings in README under "Deployment" and commit**
+- [ ] **Step 3: Content review on the preview**
+
+Open `https://kei178.github.io/tokyotranslator/`. Absolute asset paths (`/assets/...`) will not resolve on the project URL, so styling may be missing here; that is expected and fixes itself once the custom domain is set. Review the text of all three pages (`/`, `/en/`, `/ja/`) for the §5 assumptions. If the owner wants a styled preview before the domain switch, temporarily open the local server instead (Task 3 Step 6).
+
+- [ ] **Step 4: Record the settings in README under "Deployment" and commit**
 
 ```bash
-git add README.md && git commit -m "docs: Cloudflare Pages deployment settings"
+git add README.md && git commit -m "docs: GitHub Pages deployment settings"
 ```
 
 ---
 
-### Task 9: DNS move and custom domain (owner performs; one maintenance window)
+### Task 9: Custom domain and the two Sakura records (owner performs; one short window)
 
 **Files:** none; outcome recorded in `README.md` "Domain and DNS" table.
 
-- [ ] **Step 1: Export the current Sakura zone**
-
-In the Sakura control panel (さくらのドメイン / ゾーン編集) copy every record for `tokyotranslator.com` into a text file. Compare against the live values:
+- [ ] **Step 1: Snapshot the mail records before touching anything**
 
 ```bash
-dig +short MX tokyotranslator.com; dig +short A tokyotranslator.com; dig +short TXT tokyotranslator.com
+dig +short MX tokyotranslator.com | sort | tee /tmp/mx-before.txt
 ```
 
-Expected today: the two Zoho MX records, `A 153.126.130.234`, no TXT. Any extra record found in the panel (DKIM selectors, verification TXTs, subdomains) is carried over too; the panel, not `dig`, is the source of truth. TTLs are 3600 s, so no TTL lowering is needed ahead of the switch.
+Expected: `10 mx.zohomail.com.` and `20 mx2.zohomail.com.`.
 
-- [ ] **Step 2: Add the site to Cloudflare**
+- [ ] **Step 2: (Optional, recommended) verify the domain on GitHub**
 
-Cloudflare dashboard → Add a domain → `tokyotranslator.com` → Free plan. Let it import the zone, then make the record set exactly:
+GitHub → Settings (account) → Pages → Add a domain → `tokyotranslator.com`. GitHub shows a TXT record name `_github-pages-challenge-kei178` and a value. In the Sakura zone editor **add** that TXT record. Do not open any other row. Click Verify once `dig +short TXT _github-pages-challenge-kei178.tokyotranslator.com` returns the value.
 
-| Type | Name | Content | Proxy |
-|---|---|---|---|
-| MX | @ | `mx.zohomail.com` prio 10 | – |
-| MX | @ | `mx2.zohomail.com` prio 20 | – |
-| TXT | @ | `v=spf1 include:zohomail.com ~all` (owner confirms the include string in Zoho Admin → Domains → SPF) | – |
-| (any DKIM / verification TXT copied from Sakura) | | | – |
+- [ ] **Step 3: Set the custom domain on the repo**
 
-Delete the imported `A 153.126.130.234`. Do not add A/CNAME for `@` or `www` by hand; Pages adds them in Step 3.
+Run: `gh api -X PUT repos/kei178/tokyotranslator/pages -f cname=tokyotranslator.com`
+Expected: Settings → Pages shows `tokyotranslator.com` with "DNS check in progress".
 
-- [ ] **Step 3: Attach the custom domains to the Pages project**
+- [ ] **Step 4: Edit the two web records at Sakura**
 
-Pages project → Custom domains → add `tokyotranslator.com`, then add `www.tokyotranslator.com`. Cloudflare creates the two CNAME records to `<project>.pages.dev` (proxied).
+In the Sakura zone editor for `tokyotranslator.com`:
 
-- [ ] **Step 4: Switch nameservers at Sakura**
+| Action | Row | New value |
+|---|---|---|
+| edit | `A` `@` `153.126.130.234` | `185.199.108.153` (then add three more `A @` rows: `185.199.109.153`, `185.199.110.153`, `185.199.111.153`) |
+| add | `CNAME` `www` | `kei178.github.io.` |
 
-In the Sakura domain panel set the nameservers to the two names Cloudflare shows for this zone (`*.ns.cloudflare.com`). Note the time.
+Nothing else. The two `MX` rows are not opened.
 
-- [ ] **Step 5: Verify after propagation (allow up to 24 h, usually under 1 h)**
+- [ ] **Step 5: Verify DNS (TTL is 3600 s; allow up to an hour)**
 
 ```bash
-dig +short NS tokyotranslator.com
-dig +short MX tokyotranslator.com
-for u in https://tokyotranslator.com/ https://tokyotranslator.com/en/ https://tokyotranslator.com/ja/ http://tokyotranslator.com/ https://www.tokyotranslator.com/ https://tokyotranslator.com/en https://tokyotranslator.com/wp-login.php; do curl -sS -o /dev/null -L -w "$u -> %{url_effective} %{http_code} redirects=%{num_redirects}\n" "$u"; done
-curl -sSI https://tokyotranslator.com/ | grep -iE "content-security-policy|strict-transport"
+dig +short A tokyotranslator.com | sort
+dig +short CNAME www.tokyotranslator.com
+dig +short MX tokyotranslator.com | sort | diff - /tmp/mx-before.txt && echo "MX unchanged"
 ```
 
-Expected: NS are Cloudflare's; MX unchanged (Zoho); the three pages 200 with 0 redirects; `http://` and `www` end at `https://tokyotranslator.com/` with 1 redirect each; `/en` → `/en/` 301; `/wp-login.php` → `/` 301; CSP header present.
+Expected: the four GitHub IPs; `kei178.github.io.`; `MX unchanged`.
 
-- [ ] **Step 6: Mail test**
+- [ ] **Step 6: Enforce HTTPS**
 
-Send one email from an outside account (e.g. Gmail) to `quade@tokyotranslator.com` and reply to it from Zoho. Expected: both arrive; the Gmail "show original" view of the reply shows `SPF: PASS`.
+Once Settings → Pages shows "DNS check successful" and the certificate is issued (can take up to an hour after DNS resolves), tick **Enforce HTTPS**. Via CLI: `gh api -X PUT repos/kei178/tokyotranslator/pages -F https_enforced=true`.
 
-- [ ] **Step 7: Enable HSTS**
+- [ ] **Step 7: Verify the live site**
 
-Cloudflare → SSL/TLS → Edge Certificates → HSTS: max-age 6 months, include subdomains off (unless the owner also wants it for mail-related hostnames, which Zoho does not use), preload off. Also set SSL/TLS mode to "Full (strict)" and "Always Use HTTPS" on.
+```bash
+for u in https://tokyotranslator.com/ https://tokyotranslator.com/en/ https://tokyotranslator.com/ja/ http://tokyotranslator.com/ https://www.tokyotranslator.com/ https://tokyotranslator.com/en https://tokyotranslator.com/wp-login.php; do curl -sS -o /dev/null -L -w "$u -> %{url_effective} %{http_code}\n" "$u"; done
+curl -sSI https://tokyotranslator.com/ | grep -i strict-transport-security
+```
+
+Expected: the three pages 200 at their own URL; `http://` and `www` end at `https://tokyotranslator.com/`; `/en` ends at `/en/` 200; `/wp-login.php` returns 404 and shows the trilingual 404 page in a browser; the HSTS header is present. Open each page in a browser once: styled, fonts loaded, no console errors, no third-party requests.
 
 - [ ] **Step 8: Update the README "Domain and DNS" table to the new state and commit**
 
 ```bash
-git add README.md && git commit -m "docs: DNS moved to Cloudflare, site live"
+git add README.md && git commit -m "docs: site live on GitHub Pages, DNS records updated at Sakura"
 ```
 
 ---
 
 ### Task 10: Decommission Sakura (owner)
 
-- [ ] **Step 1:** Renew the domain at Sakura (さくらのドメイン) before **2026-11-30**; the registration is through Sakura (registrar JPRS) and the nameserver move does not change that. Do this first, independently of everything else.
+- [ ] **Step 1:** Renew the domain at Sakura (さくらのドメイン) before **2026-11-30**; the registration is through Sakura (registrar JPRS). Do this first, independently of everything else.
 - [ ] **Step 2:** After one week of the site and mail working, cancel only the Sakura server/hosting contract that ran WordPress. Do not cancel the domain contract.
 - [ ] **Step 3:** Note the renewal and cancellation dates in README under "Old stack" and "Domain and DNS".
