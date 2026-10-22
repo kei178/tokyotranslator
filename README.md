@@ -81,6 +81,20 @@ page navigation, no JavaScript involved.
 
 See the design doc for why.
 
+## Deployment
+
+- **Host:** GitHub Pages, repository `kei178/tokyotranslator` (public).
+- **Source:** GitHub Actions (`.github/workflows/pages.yml`); every push to
+  `main` uploads `site/` and deploys it. No build step.
+- **Preview URL until the custom domain is set:**
+  <https://kei178.github.io/tokyotranslator/> (`/en/`, `/ja/`). Styling is
+  missing there because asset paths are absolute (`/assets/...`); that is
+  expected and resolves itself once `tokyotranslator.com` is the custom
+  domain.
+- **Cutover (pending):** see Tasks 9–10 in the implementation plan. Only the
+  apex `A` record and a new `www` CNAME change at Sakura; the Zoho MX records
+  are not touched.
+
 ## Working on the site locally
 
 Everything the browser needs is in `site/`. There is no build step.
