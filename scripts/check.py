@@ -122,8 +122,11 @@ def check_page(path: Path, failures: list[str]) -> None:
             if not any(a.get("href") == LANG_PATH[other] and a.get("lang") == other for a in page.anchors):
                 fail(f'no language-switcher <a href="{LANG_PATH[other]}" lang="{other}">')
 
+    if not any(l.get("rel") == "icon" and l.get("href") == "/favicon.svg" for l in page.links):
+        fail('missing <link rel="icon" href="/favicon.svg">')
+
     for ref in page.assets:
-        if ref.startswith("/assets/") and not (SITE / ref.lstrip("/")).is_file():
+        if ref.startswith(("/assets/", "/favicon")) and not (SITE / ref.lstrip("/")).is_file():
             fail(f"asset not on disk: {ref}")
 
 
