@@ -81,8 +81,27 @@ See the design doc for why.
 
 ## Working on the site locally
 
+Everything the browser needs is in `site/`. There is no build step.
+
 ```bash
 python3 -m http.server 8000 --directory site
 ```
 
 Then open <http://localhost:8000/>, <http://localhost:8000/en/>, <http://localhost:8000/ja/>.
+
+Before committing a change to the pages, run the static checks (no
+scripts, no third-party URLs, correct `lang`/`hreflang`, assets exist, CSP
+meta present) and the HTML validator:
+
+```bash
+python3 -I scripts/check.py
+```
+
+```bash
+npx --yes html-validate@8.29.0 site/index.html site/en/index.html site/ja/index.html site/404.html
+```
+
+(`html-validate` 8.x is pinned because newer releases need Node 20+.)
+
+`scripts/images.py` is a one-off that produced `site/assets/img/` from the
+originals recovered from the Wayback Machine; it needs Pillow.
