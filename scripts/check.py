@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Static checks over site/. Exit 1 with one line per failure, 0 when clean.
 
-Run: python3 -I scripts/check.py
+Run: python3 -I scripts/check.py [SITE_DIR]
+
+SITE_DIR defaults to <repo>/site; the deployment workflow is expected at
+<SITE_DIR>/../.github/workflows/pages.yml.
 """
 import re
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-SITE = ROOT / "site"
+SITE = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "site"
+ROOT = SITE.parent
 
 REQUIRED_FILES = [
     SITE / "index.html",
@@ -41,7 +44,8 @@ CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self'; "
        "font-src 'self'; base-uri 'self'; form-action 'none'")
 REFERRER = "strict-origin-when-cross-origin"
 MAILTO = "mailto:quade@tokyotranslator.com"
-URL_RE = re.compile(r"https?://[^\s\"'<>)]+")
+URL_RE = re.compile(r"(?:https?:)?//[^\s\"'<>)]+")   # absolute or protocol-relative
+CSS_URL_RE = re.compile(r"""(?:@import\s+(?:url\()?|url\()\s*["']?([^"')\s]+)""")
 
 
 class Page(HTMLParser):
@@ -94,6 +98,9 @@ def check_page(path: Path, failures: list[str]) -> None:
     for url in URL_RE.findall(raw):
         if url not in allowed:
             fail(f"external URL not allowed: {url}")
+    for ref in page.assets:
+        if ref.startswith("//"):
+            fail(f"protocol-relative URL not allowed: {ref}")
 
     metas = {(m.get("http-equiv") or m.get("name") or "").lower(): m.get("content") for m in page.metas}
     if metas.get("content-security-policy") != CSP:
@@ -130,6 +137,17 @@ def check_page(path: Path, failures: list[str]) -> None:
             fail(f"asset not on disk: {ref}")
 
 
+def check_css(path: Path, failures: list[str]) -> None:
+    rel = path.relative_to(SITE).as_posix()
+    for target in CSS_URL_RE.findall(path.read_text(encoding="utf-8")):
+        if target.startswith(("http://", "https://", "//")):
+            failures.append(f"{rel}: external URL not allowed: {target}")
+        elif not target.startswith("data:"):
+            resolved = (path.parent / target.split("?")[0].split("#")[0]).resolve()
+            if not resolved.is_file():
+                failures.append(f"{rel}: asset not on disk: {target}")
+
+
 def main() -> int:
     failures: list[str] = []
     for f in REQUIRED_FILES:
@@ -137,6 +155,8 @@ def main() -> int:
             failures.append(f"missing file: {f.relative_to(ROOT).as_posix()}")
     for path in sorted(SITE.rglob("*.html")):
         check_page(path, failures)
+    for path in sorted(SITE.rglob("*.css")):
+        check_css(path, failures)
     for line in failures:
         print(line)
     return 1 if failures else 0

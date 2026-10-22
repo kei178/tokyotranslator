@@ -9,9 +9,10 @@ shut down. This repository rebuilds the same content as plain static HTML and
 hosts it on GitHub Pages, with the DNS zone (and the Zoho mail records in it)
 left untouched at Sakura.
 
-Status (2026-10-22): the old server no longer responds. The three captured
-WordPress pages in [`reference/`](reference/) are the only copy of the content
-and design. Nothing has been rebuilt yet.
+Status (2026-10-22): the old server no longer responds. The static site is
+rebuilt in [`site/`](site/) and verified locally; the cutover (enable GitHub
+Pages, point the domain at it) is still pending. The three captured WordPress
+pages in [`reference/`](reference/) are the source the rebuild was made from.
 
 ## Documents
 
@@ -32,7 +33,8 @@ A single landing page, available in three languages, with these sections:
 | Services | Leistungen | Services | サービス |
 | Rates | Preise | Rates | 料金 |
 | Legal notice | Impressum | Impressum | 管理者情報 |
-| Contact | Kontakt (form) | Contact (form) | お問い合わせ (form) |
+| Contact | Kontakt (E-Mail) | Contact (email) | お問い合わせ（メール） |
+| Privacy | Datenschutz | Privacy | プライバシーポリシー |
 
 The contact form is dropped in the static version. Contact is by email
 (`quade@tokyotranslator.com`) instead.
@@ -54,8 +56,8 @@ page navigation, no JavaScript involved.
   **Contact Form 7**, **Smart Slider 3** (hero slider).
 - Fonts: Lora (body), Montserrat (headings), loaded from Google Fonts.
 - Images: three hero slides (`tokyotranslator_slider{1,2,3}-1.jpg`, 2017) and one
-  profile photo (`profile_nq.jpg`, 2020). None are in this repo; all four are
-  archived in the Wayback Machine (see the design doc).
+  profile photo (`profile_nq.jpg`, 2020). Recovered from the Wayback Machine and
+  stored, resized and EXIF-stripped, in `site/assets/img/`.
 - Server: Sakura Internet (`153.126.130.234`), now unreachable.
 
 ## Domain and DNS (current state)
@@ -95,6 +97,12 @@ meta present) and the HTML validator:
 
 ```bash
 python3 -I scripts/check.py
+```
+
+The check script has its own tests:
+
+```bash
+python3 -I -m unittest discover -s tests
 ```
 
 ```bash
