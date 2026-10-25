@@ -216,7 +216,7 @@ html[lang="ja"] .brand-sub { font-style: normal; }
 .split .prose { max-width: var(--measure); }
 .subcards { display: grid; gap: 1rem; }
 .subcard { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 1.25rem 1.5rem; }
-.subcard h4 { margin: 0 0 0.4rem; }
+.subcard h3 { margin: 0 0 0.4rem; font-size: 1.1rem; }
 .subcard p { margin: 0; color: var(--muted); font-size: 0.98rem; }
 .checklist { list-style: none; padding: 0; margin: 0 0 1rem; }
 .checklist li { display: flex; gap: 0.6rem; align-items: flex-start; }
