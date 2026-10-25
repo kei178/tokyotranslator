@@ -42,10 +42,10 @@ class CheckScriptTests(unittest.TestCase):
 
     def test_missing_font_file_referenced_from_css_fails(self):
         p = self.site / "assets" / "css" / "style.css"
-        p.write_text(p.read_text().replace("lora-700.woff2", "lora-missing.woff2"))
+        p.write_text(p.read_text().replace("manrope-600.woff2", "manrope-missing.woff2"))
         r = run_check(self.site)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("lora-missing.woff2", r.stdout)
+        self.assertIn("manrope-missing.woff2", r.stdout)
 
 
 if __name__ == "__main__":
