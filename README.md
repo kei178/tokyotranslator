@@ -9,9 +9,8 @@ shut down. This repository rebuilds the same content as plain static HTML and
 hosts it on GitHub Pages, with the DNS zone (and the Zoho mail records in it)
 left untouched at Sakura.
 
-Status (2026-10-22): the old server no longer responds. The static site is
-rebuilt in [`site/`](site/) and verified locally; the cutover (enable GitHub
-Pages, point the domain at it) is still pending. The three captured WordPress
+Status (2026-10-25): the static site in [`site/`](site/) is live at
+<https://tokyotranslator.com/> on GitHub Pages. The three captured WordPress
 pages in [`reference/`](reference/) are the source the rebuild was made from.
 
 ## Documents
@@ -60,17 +59,20 @@ page navigation, no JavaScript involved.
   stored, resized and EXIF-stripped, in `site/assets/img/`.
 - Server: Sakura Internet (`153.126.130.234`), now unreachable.
 
-## Domain and DNS (current state)
+## Domain and DNS (current state, 2026-10-25)
 
 | Record | Value |
 |---|---|
 | Registrar | JPRS, via Sakura Internet's domain service. **Registration expires 2026-11-30 – renew at Sakura.** |
-| Nameservers | `ns1.dns.ne.jp`, `ns2.dns.ne.jp` (Sakura Internet) |
-| `A tokyotranslator.com` | `153.126.130.234` (dead WordPress server) |
-| `MX` | `mx.zohomail.com` (10), `mx2.zohomail.com` (20) – **mail is on Zoho and must keep working** |
-| `www` | no record |
-| SPF / DKIM / DMARC | none published |
+| Nameservers | `ns1.dns.ne.jp`, `ns2.dns.ne.jp` (Sakura Internet) – unchanged |
+| `A tokyotranslator.com` | `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` (GitHub Pages) |
+| `CNAME www` | `kei178.github.io` |
+| `MX` | `mx.zohomail.com` (10), `mx2.zohomail.com` (20) – Zoho, untouched |
+| SPF / DKIM / DMARC | none published (left alone on purpose) |
 | Record TTL | 3600 s |
+
+The site went live on the custom domain on 2026-10-25 with HTTPS enforced.
+The old server (`153.126.130.234`) is no longer referenced anywhere.
 
 ## New stack (decided)
 
@@ -86,14 +88,11 @@ See the design doc for why.
 - **Host:** GitHub Pages, repository `kei178/tokyotranslator` (public).
 - **Source:** GitHub Actions (`.github/workflows/pages.yml`); every push to
   `main` uploads `site/` and deploys it. No build step.
-- **Preview URL until the custom domain is set:**
-  <https://kei178.github.io/tokyotranslator/> (`/en/`, `/ja/`). Styling is
-  missing there because asset paths are absolute (`/assets/...`); that is
-  expected and resolves itself once `tokyotranslator.com` is the custom
-  domain.
-- **Cutover (pending):** see Tasks 9–10 in the implementation plan. Only the
-  apex `A` record and a new `www` CNAME change at Sakura; the Zoho MX records
-  are not touched.
+- **Custom domain:** `tokyotranslator.com` (set in the repo's Pages settings,
+  "Enforce HTTPS" on). `www` redirects to the apex. Live since 2026-10-25.
+- **Still to do (Task 10 in the plan):** renew the domain at Sakura before
+  2026-11-30; after a week of the site working, cancel only the Sakura
+  server contract.
 
 ## Working on the site locally
 

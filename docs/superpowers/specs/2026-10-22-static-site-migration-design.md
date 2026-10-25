@@ -259,7 +259,7 @@ value until told otherwise.
 
 | # | Issue | Assumed for now |
 |---|---|---|
-| 1 | Impressum address differs by language: DE shows Nishinomiya (Hyōgo), EN shows both Nishinomiya and Tokyo Ariake, JA shows only Tokyo Ariake (`〒135-0063`; EN has the typo `135-006`). Which address is current? | Tokyo Ariake, `135-0063`, on all three pages |
+| 1 | Impressum address differs by language: DE shows Nishinomiya (Hyōgo), EN shows both Nishinomiya and Tokyo Ariake, JA shows only Tokyo Ariake (`〒135-0063`; EN has the typo `135-006`). Which address is current? | ~~Tokyo Ariake~~ Owner confirmed 2026-10-25: 10-3 Kawanishi-cho, Nishinomiya, Hyogo 662-0951 on all three pages |
 | 2 | Years of experience: DE/EN say 8, JA says 7. The pages date from 2017–2020, so both are probably stale. | "8" on all three pages until the owner gives a current number |
 | 3 | Hero taglines mention book translation (Literaturübersetzungen), but the Services list does not. Keep as is? | keep as is |
 | 4 | Privacy section wording (4.8). | draft text, owner reviews |
